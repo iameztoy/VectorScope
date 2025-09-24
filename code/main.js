@@ -72,6 +72,13 @@ panel.add(sampleAssetBox);
 var heatCheck = ui.Checkbox('Show similarity heat-map', true);
 panel.add(heatCheck);
 
+var heatLayer, maskLayer, lastMask, lastAoi;
+var heatLayerShown = heatCheck.getValue();
+heatCheck.onChange(function(show){
+  heatLayerShown = show;
+  if(heatLayer) heatLayer.setShown(show);
+});
+
 /* ---------- run / clear buttons ---------- */
 panel.add(ui.Button('Run Analysis', runAnalysis));
 panel.add(ui.Button('Clear Results', clearOutputs));
@@ -143,7 +150,6 @@ function collectInputs(){
 }
 
 /**********************  RUN ANALYSIS  *************************/
-var heatLayer, maskLayer, lastMask, lastAoi;
 function runAnalysis(){
   status.setValue('');
   var drawn = collectInputs();
@@ -182,10 +188,10 @@ function runAnalysis(){
   heatLayer=Map.addLayer(sim,
     {min:0,max:1,palette:['000004','2C105C','711F81','B63679',
                           'EE605E','FDAE78','FCFDBF','FFFFFF']},
-    'Cosine similarity', heatCheck.getValue());
+    'Cosine similarity', heatLayerShown);
+  heatLayer.setShown(heatLayerShown);
   maskLayer=Map.addLayer(mask.updateMask(mask),
     {palette:['magenta']}, 'Similarity > '+thr.toFixed(3));
-  heatCheck.onChange(function(s){if(heatLayer)heatLayer.setShown(s);});
   Map.centerObject(drawn.aoi,11);
 
   lastMask=mask; lastAoi=drawn.aoi;
@@ -198,13 +204,20 @@ function exportMask(){
   var assetId=assetBox.getValue();
   if(!assetId){status.setValue('⚠️  Enter an Asset ID.');return;}
 
-  var p={image:lastMask.toByte(), description:'similarity_mask_export',
+  var exportImage=lastMask.updateMask(lastMask).clip(lastAoi);
+  var p={image:exportImage.toByte(), description:'similarity_mask_export',
          assetId:assetId, region:lastAoi, maxPixels:1e10,
          pyramidingPolicy:{'.default':'mode'}};
 
+  var statusNote='';
   switch(projSelect.getValue()){
     case 'WGS 84 (EPSG 4326)':
-      p.crs='EPSG:4326'; p.scale=10/111320; break;
+      // Earth Engine expects `scale` in meters even for EPSG:4326, so this
+      // keeps the requested export at a 10 m resolution while it performs the
+      // degree conversion internally.
+      p.crs='EPSG:4326'; p.scale=10;
+      statusNote='Projection: WGS 84 (EPSG:4326) at 10 m scale.';
+      break;
     case 'UTM (auto)':
       var centroid=lastAoi.centroid(100);
       var lon=centroid.coordinates().get(0).getInfo();
@@ -212,18 +225,23 @@ function exportMask(){
       var zone=Math.floor((lon+180)/6)+1;
       var epsg=(lat>=0?32600:32700)+zone;
       p.crs='EPSG:'+epsg; p.scale=10;
-      status.setValue('Exporting in UTM zone '+zone+' (EPSG:'+epsg+').'); break;
+      statusNote='Projection: UTM zone '+zone+' (EPSG:'+epsg+') at 10 m scale.';
+      break;
     case 'EPSG 3587':
-      p.crs='EPSG:3587'; p.scale=10; break;
+      p.crs='EPSG:3587'; p.scale=10;
+      statusNote='Projection: EPSG 3587 at 10 m scale.';
+      break;
   }
   Export.image.toAsset(p);
-  status.setValue('Export task created → check “Tasks” tab.');
+  var message='Export task created → check “Tasks” tab.';
+  if(statusNote) message+="\n"+statusNote;
+  status.setValue(message);
 }
 
 /*******************  CLEAR OUTPUTS  ***************************/
 function clearOutputs(){
   if(heatLayer) Map.remove(heatLayer);
   if(maskLayer) Map.remove(maskLayer);
-  heatLayer=maskLayer=lastMask=null;
+  heatLayer=maskLayer=lastMask=lastAoi=null;
   status.setValue('');
 }
