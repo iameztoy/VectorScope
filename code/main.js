@@ -198,7 +198,8 @@ function exportMask(){
   var assetId=assetBox.getValue();
   if(!assetId){status.setValue('⚠️  Enter an Asset ID.');return;}
 
-  var p={image:lastMask.toByte(), description:'similarity_mask_export',
+  var exportImage=lastMask.updateMask(lastMask).clip(lastAoi);
+  var p={image:exportImage.toByte(), description:'similarity_mask_export',
          assetId:assetId, region:lastAoi, maxPixels:1e10,
          pyramidingPolicy:{'.default':'mode'}};
 
