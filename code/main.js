@@ -1,9 +1,4 @@
 
-/**
- * © 2025 Iban Ameztoy — MIT License
- * See LICENSE file in repository root for full terms.
- */
-
 /****************************************************************
  *  VectorScope: Similarity Search with Embeddings
  *  (Google Satellite Embeddings V1)
@@ -22,9 +17,7 @@ var panel = ui.Panel({
   style:{
     position:'top-left', width:'350px',
     padding:'8px 8px 4px 8px',
-    backgroundColor:'rgba(255,255,255,0.92)',
-    maxHeight:'90%',
-    overflowY:'auto'
+    backgroundColor:'rgba(255,255,255,0.92)'
   }
 });
 panel.add(ui.Label({
@@ -73,13 +66,6 @@ panel.add(sampleAssetBox);
 /* ---------- heat-map toggle ---------- */
 var heatCheck = ui.Checkbox('Show similarity heat-map', true);
 panel.add(heatCheck);
-
-var heatLayer, maskLayer, lastMask, lastAoi;
-var heatLayerShown = heatCheck.getValue();
-heatCheck.onChange(function(show){
-  heatLayerShown = show;
-  if(heatLayer) heatLayer.setShown(show);
-});
 
 /* ---------- run / clear buttons ---------- */
 panel.add(ui.Button('Run Analysis', runAnalysis));
@@ -152,6 +138,7 @@ function collectInputs(){
 }
 
 /**********************  RUN ANALYSIS  *************************/
+var heatLayer, maskLayer, lastMask, lastAoi;
 function runAnalysis(){
   status.setValue('');
   var drawn = collectInputs();
@@ -190,10 +177,10 @@ function runAnalysis(){
   heatLayer=Map.addLayer(sim,
     {min:0,max:1,palette:['000004','2C105C','711F81','B63679',
                           'EE605E','FDAE78','FCFDBF','FFFFFF']},
-    'Cosine similarity', heatLayerShown);
-  heatLayer.setShown(heatLayerShown);
+    'Cosine similarity', heatCheck.getValue());
   maskLayer=Map.addLayer(mask.updateMask(mask),
     {palette:['magenta']}, 'Similarity > '+thr.toFixed(3));
+  heatCheck.onChange(function(s){if(heatLayer)heatLayer.setShown(s);});
   Map.centerObject(drawn.aoi,11);
 
   lastMask=mask; lastAoi=drawn.aoi;
@@ -206,20 +193,13 @@ function exportMask(){
   var assetId=assetBox.getValue();
   if(!assetId){status.setValue('⚠️  Enter an Asset ID.');return;}
 
-  var exportImage=lastMask.updateMask(lastMask).clip(lastAoi);
-  var p={image:exportImage.toByte(), description:'similarity_mask_export',
+  var p={image:lastMask.toByte(), description:'similarity_mask_export',
          assetId:assetId, region:lastAoi, maxPixels:1e10,
          pyramidingPolicy:{'.default':'mode'}};
 
-  var statusNote='';
   switch(projSelect.getValue()){
     case 'WGS 84 (EPSG 4326)':
-      // Earth Engine expects `scale` in meters even for EPSG:4326, so this
-      // keeps the requested export at a 10 m resolution while it performs the
-      // degree conversion internally.
-      p.crs='EPSG:4326'; p.scale=10;
-      statusNote='Projection: WGS 84 (EPSG:4326) at 10 m scale.';
-      break;
+      p.crs='EPSG:4326'; p.scale=10/111320; break;
     case 'UTM (auto)':
       var centroid=lastAoi.centroid(100);
       var lon=centroid.coordinates().get(0).getInfo();
@@ -227,23 +207,19 @@ function exportMask(){
       var zone=Math.floor((lon+180)/6)+1;
       var epsg=(lat>=0?32600:32700)+zone;
       p.crs='EPSG:'+epsg; p.scale=10;
-      statusNote='Projection: UTM zone '+zone+' (EPSG:'+epsg+') at 10 m scale.';
-      break;
+      status.setValue('Exporting in UTM zone '+zone+' (EPSG:'+epsg+').'); break;
     case 'EPSG 3587':
-      p.crs='EPSG:3587'; p.scale=10;
-      statusNote='Projection: EPSG 3587 at 10 m scale.';
-      break;
+      p.crs='EPSG:3587'; p.scale=10; break;
   }
   Export.image.toAsset(p);
-  var message='Export task created → check “Tasks” tab.';
-  if(statusNote) message+="\n"+statusNote;
-  status.setValue(message);
+  status.setValue('Export task created → check “Tasks” tab.');
 }
 
 /*******************  CLEAR OUTPUTS  ***************************/
 function clearOutputs(){
   if(heatLayer) Map.remove(heatLayer);
   if(maskLayer) Map.remove(maskLayer);
-  heatLayer=maskLayer=lastMask=lastAoi=null;
+  heatLayer=maskLayer=lastMask=null;
   status.setValue('');
 }
+
