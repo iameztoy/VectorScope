@@ -22,7 +22,9 @@ var panel = ui.Panel({
   style:{
     position:'top-left', width:'350px',
     padding:'8px 8px 4px 8px',
-    backgroundColor:'rgba(255,255,255,0.92)'
+    backgroundColor:'rgba(255,255,255,0.92)',
+    maxHeight:'90%',
+    overflowY:'auto'
   }
 });
 panel.add(ui.Label({
