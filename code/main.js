@@ -1,4 +1,3 @@
-
 /**
  * © 2025 Iban Ameztoy — MIT License
  * See LICENSE file in repository root for full terms.
@@ -23,6 +22,8 @@ tools.setDrawModes(['polygon', 'rectangle', 'point']);
 var panel = ui.Panel({
   style:{
     position:'top-left', width:'350px',
+    maxHeight:'92vh',
+    overflow:'auto',
     padding:'8px 8px 4px 8px',
     backgroundColor:'rgba(255,255,255,0.92)'
   }
@@ -35,14 +36,14 @@ panel.add(ui.Label(
   '1️⃣  Draw ONE AOI polygon/rectangle.\n' +
   '2️⃣  One or more sample points should be drawn in a NEW geometry layer, '+
   'separate from the AOI, **OR** supply an asset containing sample points.\n' +
-  '3️⃣  Select year & threshold, then “Run Analysis”.'
+  '3️⃣  Select year & threshold, then run your chosen analysis tab.'
 ));
 
 /* ---------- status line ---------- */
 var status = ui.Label('', {padding:'4px 0', color:'red'});
 panel.add(status);
 
-/* ---------- year selector ---------- */
+/* ---------- shared controls ---------- */
 var years = ee.List.sequence(2017,2025).map(function(y){
               return ee.Number(y).format('%d');}).getInfo();
 years.unshift('Select year');
@@ -53,51 +54,100 @@ panel.add(ui.Panel([ui.Label('Year:'),yearSelect],
 panel.add(ui.Label('Default = 2020 if left unchanged.',
                    {margin:'0 0 6px 40px', color:'#555'}));
 
-/* ---------- threshold slider ---------- */
+/* ---------- tab selector ---------- */
+var activeTab = 'similarity';
+var tabsRow = ui.Panel({layout:ui.Panel.Layout.Flow('horizontal')});
+var similarityTabButton = ui.Button({label:'Similarity'});
+var unsupTabButton = ui.Button({label:'Unsupervised'});
+tabsRow.add(similarityTabButton);
+tabsRow.add(unsupTabButton);
+panel.add(tabsRow);
+
+function setActiveTab(tabName){
+  activeTab = tabName;
+  similarityPanel.style().set('shown', tabName === 'similarity');
+  unsupPanel.style().set('shown', tabName === 'unsupervised');
+  similarityTabButton.style().set('fontWeight', tabName === 'similarity' ? 'bold' : 'normal');
+  unsupTabButton.style().set('fontWeight', tabName === 'unsupervised' ? 'bold' : 'normal');
+}
+
+similarityTabButton.onClick(function(){ setActiveTab('similarity'); });
+unsupTabButton.onClick(function(){ setActiveTab('unsupervised'); });
+
+/* ---------- similarity tab ---------- */
+var similarityPanel = ui.Panel({style:{margin:'6px 0 0 0'}});
+
 var thSlider = ui.Slider({min:0.80,max:0.99,step:0.005,value:0.92});
 var thLabel  = ui.Label(thSlider.getValue().toFixed(3));
 thSlider.onChange(function(v){thLabel.setValue(v.toFixed(3));});
-panel.add(ui.Panel([ui.Label('Threshold:'),thSlider,thLabel],
-                   ui.Panel.Layout.Flow('horizontal')));
+similarityPanel.add(ui.Panel([ui.Label('Threshold:'),thSlider,thLabel],
+                              ui.Panel.Layout.Flow('horizontal')));
 
-/* ---------- sample-source widgets ---------- */
-panel.add(ui.Label('Sample points source:', {margin:'8px 0 2px 0'}));
+similarityPanel.add(ui.Label('Sample points source:', {margin:'8px 0 2px 0'}));
 var assetCheck = ui.Checkbox('Use sample points from asset', false);
 var sampleAssetBox = ui.Textbox({placeholder:'users/your_name/samplePoints',
                                  disabled:true});
 assetCheck.onChange(function(v){ sampleAssetBox.setDisabled(!v); });
-panel.add(assetCheck);
+similarityPanel.add(assetCheck);
 sampleAssetBox.style().set('width','260px');
-panel.add(sampleAssetBox);
+similarityPanel.add(sampleAssetBox);
 
-/* ---------- heat-map toggle ---------- */
 var heatCheck = ui.Checkbox('Show similarity heat-map', true);
-panel.add(heatCheck);
+var embeddingCheck = ui.Checkbox('Show embedding RGB (bands 1-3)', true);
+similarityPanel.add(heatCheck);
+similarityPanel.add(embeddingCheck);
 
-/* ---------- run / clear buttons ---------- */
-panel.add(ui.Button('Run Analysis', runAnalysis));
-panel.add(ui.Button('Clear Results', clearOutputs));
+similarityPanel.add(ui.Button('Run Similarity Analysis', runSimilarityAnalysis));
+similarityPanel.add(ui.Button('Clear Results', clearOutputs));
 
-/* ---------- export widgets ---------- */
-panel.add(ui.Label('Optional export of mask to Asset:', {margin:'8px 0 0 0'}));
+similarityPanel.add(ui.Label('Optional export of mask to Asset:', {margin:'8px 0 0 0'}));
 var assetBox = ui.Textbox({placeholder:'users/your_name/mask2024'});
 assetBox.style().set('width','220px');
-panel.add(ui.Panel([ui.Label('Asset ID:'), assetBox],
+similarityPanel.add(ui.Panel([ui.Label('Asset ID:'), assetBox],
                    ui.Panel.Layout.Flow('horizontal')));
 
 var projSelect = ui.Select({
   items:['WGS 84 (EPSG 4326)','UTM (auto)','EPSG 3587'],
   value:'WGS 84 (EPSG 4326)', style:{width:'170px'}
 });
-panel.add(ui.Panel([ui.Label('Projection:'), projSelect],
+similarityPanel.add(ui.Panel([ui.Label('Projection:'), projSelect],
                    ui.Panel.Layout.Flow('horizontal')));
-panel.add(ui.Button('Export Mask → Asset', exportMask));
+similarityPanel.add(ui.Button('Export Mask → Asset', exportMask));
+
+/* ---------- unsupervised tab ---------- */
+var unsupPanel = ui.Panel({style:{shown:false, margin:'6px 0 0 0'}});
+unsupPanel.add(ui.Label('Unsupervised classification (beta)',
+                        {fontWeight:'bold'}));
+unsupPanel.add(ui.Label(
+  'Runs k-means directly on the embedding vectors for the selected year.\n' +
+  'Use this tab to explore clusters, independent of sample points.'
+));
+
+var clusterSlider = ui.Slider({min:2, max:12, step:1, value:6});
+var clusterLabel = ui.Label(clusterSlider.getValue().toFixed(0));
+clusterSlider.onChange(function(v){ clusterLabel.setValue(v.toFixed(0)); });
+unsupPanel.add(ui.Panel([ui.Label('Clusters (k):'), clusterSlider, clusterLabel],
+                        ui.Panel.Layout.Flow('horizontal')));
+
+var trainSampleSlider = ui.Slider({min:500, max:7000, step:250, value:2000});
+var trainSampleLabel = ui.Label(trainSampleSlider.getValue().toFixed(0));
+trainSampleSlider.onChange(function(v){ trainSampleLabel.setValue(v.toFixed(0)); });
+unsupPanel.add(ui.Panel([ui.Label('Training samples:'), trainSampleSlider, trainSampleLabel],
+                        ui.Panel.Layout.Flow('horizontal')));
+
+unsupPanel.add(ui.Button('Run Unsupervised Classification', runUnsupervisedClassification));
+unsupPanel.add(ui.Label(
+  'Tip: this panel is now scrollable, so longer outputs/instructions remain readable.',
+  {color:'#555', margin:'4px 0 0 0'}
+));
+
+panel.add(similarityPanel);
+panel.add(unsupPanel);
 
 /* ---------- about & credit ---------- */
 panel.add(ui.Label(
-  'About: computes a cosine-similarity heat-map between each pixel’s 64-D '+
-  'embedding and the mean embedding of your sample points, then thresholds it '+
-  'to mark “pixels that look like the samples.”'
+  'About: similarity tab computes cosine similarity between each pixel’s 64-D '+
+  'embedding and the mean embedding of sample points, then thresholds it.'
 ));
 panel.add(ui.Label('————————————————————————————',
                    {margin:'2px 0', color:'#999'}));
@@ -118,6 +168,7 @@ panel.add(ui.Label(
   {margin:'4px 0 0 0', color:'#777', fontSize:'10px'}
 ));
 Map.add(panel);
+setActiveTab('similarity');
 
 /****************  HELPER FUNCTIONS  ***************************/
 function flattenGeom(g){
@@ -129,6 +180,17 @@ function flattenGeom(g){
   }
   return [g];
 }
+
+function getSelectedYear(){
+  return (yearSelect.getValue()==='Select year') ? 2020 : parseInt(yearSelect.getValue(), 10);
+}
+
+function getYearMosaic(year, aoi){
+  var start=ee.Date.fromYMD(year,1,1), end=start.advance(1,'year');
+  return ee.ImageCollection('GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL')
+      .filterDate(start,end).filterBounds(aoi).mosaic().clip(aoi);
+}
+
 function collectInputs(){
   var aoi=null, pts=[];
   tools.layers().forEach(function(layer){
@@ -144,9 +206,10 @@ function collectInputs(){
   return {aoi:aoi, samples:ee.FeatureCollection(pts)};
 }
 
-/**********************  RUN ANALYSIS  *************************/
-var heatLayer, maskLayer, lastMask, lastAoi;
-function runAnalysis(){
+/**********************  RUN ANALYSES  *************************/
+var embeddingLayer, heatLayer, maskLayer, unsupLayer, lastMask, lastAoi;
+
+function runSimilarityAnalysis(){
   status.setValue('');
   var drawn = collectInputs();
   if(!drawn.aoi){status.setValue('⚠️  Draw ONE AOI polygon.');return;}
@@ -162,12 +225,9 @@ function runAnalysis(){
     sampleFC = drawn.samples;
   }
 
-  var yr=(yearSelect.getValue()==='Select year')?2020:parseInt(yearSelect.getValue(),10);
+  var yr = getSelectedYear();
   var thr=thSlider.getValue();
-  var start=ee.Date.fromYMD(yr,1,1), end=start.advance(1,'year');
-
-  var mosaic=ee.ImageCollection('GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL')
-      .filterDate(start,end).filterBounds(drawn.aoi).mosaic().clip(drawn.aoi);
+  var mosaic=getYearMosaic(yr, drawn.aoi);
 
   var bands=mosaic.bandNames();
   var samples=mosaic.sampleRegions({collection:sampleFC, scale:10});
@@ -181,6 +241,14 @@ function runAnalysis(){
   var mask=sim.gt(thr).set({style:null, year:yr});
 
   clearOutputs();
+  if (embeddingCheck.getValue()) {
+    var rgbBands = mosaic.bandNames().slice(0, 3);
+    var embeddingRgb = mosaic.select(rgbBands).unitScale(-1, 1).clamp(0, 1);
+    embeddingLayer = Map.addLayer(embeddingRgb,
+      {bands: rgbBands.getInfo(), min:0, max:1, gamma:1.2},
+      'Embedding RGB ('+yr+')', true);
+  }
+
   heatLayer=Map.addLayer(sim,
     {min:0,max:1,palette:['000004','2C105C','711F81','B63679',
                           'EE605E','FDAE78','FCFDBF','FFFFFF']},
@@ -191,12 +259,40 @@ function runAnalysis(){
   Map.centerObject(drawn.aoi,11);
 
   lastMask=mask; lastAoi=drawn.aoi;
-  status.setValue('Analysis complete — ready to export.');
+  status.setValue('Similarity analysis complete for '+yr+' — ready to export.');
+}
+
+function runUnsupervisedClassification(){
+  status.setValue('');
+  var drawn = collectInputs();
+  if(!drawn.aoi){status.setValue('⚠️  Draw ONE AOI polygon.');return;}
+
+  clearOutputs();
+  var yr = getSelectedYear();
+  var k = parseInt(clusterSlider.getValue(), 10);
+  var trainN = parseInt(trainSampleSlider.getValue(), 10);
+  var mosaic = getYearMosaic(yr, drawn.aoi);
+
+  var training = mosaic.sample({
+    region: drawn.aoi,
+    scale: 10,
+    numPixels: trainN,
+    geometries: false,
+    seed: 42
+  });
+
+  var clusterer = ee.Clusterer.wekaKMeans(k).train(training);
+  var clustered = mosaic.cluster(clusterer).rename('cluster').clip(drawn.aoi);
+
+  unsupLayer = Map.addLayer(clustered.randomVisualizer(), {},
+                            'Unsupervised clusters (k='+k+', '+yr+')', true);
+  Map.centerObject(drawn.aoi, 11);
+  status.setValue('Unsupervised classification complete for '+yr+' with k='+k+'.');
 }
 
 /**************  EXPORT MASK TO ASSET  *************************/
 function exportMask(){
-  if(!lastMask){status.setValue('⚠️  Run analysis first.');return;}
+  if(!lastMask){status.setValue('⚠️  Run similarity analysis first.');return;}
   var assetId=assetBox.getValue();
   if(!assetId){status.setValue('⚠️  Enter an Asset ID.');return;}
 
@@ -230,15 +326,16 @@ function exportMask(){
   }
   Export.image.toAsset(p);
   var message='Export task created → check “Tasks” tab.';
-  if(statusNote) message+="\n"+statusNote;
+  if(statusNote) message+='\n'+statusNote;
   status.setValue(message);
 }
 
 /*******************  CLEAR OUTPUTS  ***************************/
 function clearOutputs(){
+  if(embeddingLayer) Map.remove(embeddingLayer);
   if(heatLayer) Map.remove(heatLayer);
   if(maskLayer) Map.remove(maskLayer);
-  heatLayer=maskLayer=lastMask=null;
+  if(unsupLayer) Map.remove(unsupLayer);
+  embeddingLayer=heatLayer=maskLayer=unsupLayer=lastMask=null;
   status.setValue('');
 }
-
