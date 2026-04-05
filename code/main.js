@@ -58,20 +58,25 @@ var activeTab = 'similarity';
 var tabsRow = ui.Panel({layout:ui.Panel.Layout.Flow('horizontal')});
 var similarityTabButton = ui.Button({label:'Similarity'});
 var unsupTabButton = ui.Button({label:'Unsupervised'});
+var aboutTabButton = ui.Button({label:'About'});
 tabsRow.add(similarityTabButton);
 tabsRow.add(unsupTabButton);
+tabsRow.add(aboutTabButton);
 panel.add(tabsRow);
 
 function setActiveTab(tabName){
   activeTab = tabName;
   similarityPanel.style().set('shown', tabName === 'similarity');
   unsupPanel.style().set('shown', tabName === 'unsupervised');
+  aboutPanel.style().set('shown', tabName === 'about');
   similarityTabButton.style().set('fontWeight', tabName === 'similarity' ? 'bold' : 'normal');
   unsupTabButton.style().set('fontWeight', tabName === 'unsupervised' ? 'bold' : 'normal');
+  aboutTabButton.style().set('fontWeight', tabName === 'about' ? 'bold' : 'normal');
 }
 
 similarityTabButton.onClick(function(){ setActiveTab('similarity'); });
 unsupTabButton.onClick(function(){ setActiveTab('unsupervised'); });
+aboutTabButton.onClick(function(){ setActiveTab('about'); });
 
 /* ---------- similarity tab ---------- */
 var similarityPanel = ui.Panel({style:{margin:'6px 0 0 0'}});
@@ -139,33 +144,44 @@ unsupPanel.add(ui.Label(
   'Tip: this panel is now scrollable, so longer outputs/instructions remain readable.',
   {color:'#555', margin:'4px 0 0 0'}
 ));
+unsupPanel.add(ui.Label(
+  'Why training samples? K-means is unsupervised (no labels), but it still has\n'+
+  'to estimate cluster centroids from a subset of embedding vectors. This\n'+
+  'parameter controls how many random pixels are used to fit those centroids.',
+  {color:'#333', margin:'6px 0 0 0'}
+));
+unsupPanel.add(ui.Label('', {margin:'0 0 20px 0'}));
 
-panel.add(similarityPanel);
-panel.add(unsupPanel);
-
-/* ---------- about & credit ---------- */
-panel.add(ui.Label(
+/* ---------- about tab ---------- */
+var aboutPanel = ui.Panel({style:{shown:false, margin:'6px 0 0 0'}});
+aboutPanel.add(ui.Label(
   'About: similarity tab computes cosine similarity between each pixel’s 64-D '+
   'embedding and the mean embedding of sample points, then thresholds it.'
 ));
-panel.add(ui.Label('————————————————————————————',
+aboutPanel.add(ui.Label('————————————————————————————',
                    {margin:'2px 0', color:'#999'}));
-panel.add(ui.Label(
+aboutPanel.add(ui.Label(
   'Projection option: 4326 = lat/long (~10 m); “UTM” picks the zone from the '+
   'AOI centroid (good for small AOIs); EPSG 3587 (WGS 84 / Pseudo-Mercator — '+
   'Spherical Mercator).',
   {color:'#333'}
 ));
-panel.add(ui.Label(
+aboutPanel.add(ui.Label(
   'MIT License -  Copyright (c) 2025 Iban Ameztoy',
   {margin:'12px 0 0 0', color:'#777', fontSize:'10px'}
 ));
-panel.add(ui.Label(
+aboutPanel.add(ui.Label(
   'If you use this App or its code in your own projects, research, or '+
   'publications, please credit:\n\n' +
   'Iban Ameztoy, 2025. "VectorScope". Developed using Google Earth Engine.',
   {margin:'4px 0 0 0', color:'#777', fontSize:'10px'}
 ));
+aboutPanel.add(ui.Label('', {margin:'0 0 28px 0'}));
+
+panel.add(similarityPanel);
+panel.add(unsupPanel);
+panel.add(aboutPanel);
+
 Map.add(panel);
 setActiveTab('similarity');
 
